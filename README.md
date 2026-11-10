@@ -311,3 +311,9 @@ This project is licensed under the MIT License.
 - [AI B-roll Generator](https://github.com/Anil-matcha/AI-B-roll)
 - [No-code YouTube Shorts Generator](https://www.vadoo.tv/clip-youtube-video)
 - [ai-creator-academy](https://github.com/Anil-matcha/ai-creator-academy) — free curriculum teaching creators how to monetize AI-generated shorts and video content
+
+---
+
+## GTA VI Autonomous Media Engine
+
+A separate, self-contained platform in [`gta-media-engine/`](gta-media-engine/README.md): research, fact-checked scripts, narration, rights-cleared FFmpeg editing, multi-platform publishing and analytics, with an admin dashboard. It does not use this repo's YouTube downloader.

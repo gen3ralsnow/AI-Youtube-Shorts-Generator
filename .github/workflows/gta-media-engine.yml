@@ -1,0 +1,43 @@
+name: gta-media-engine
+
+on:
+  push:
+    paths: ["gta-media-engine/**", ".github/workflows/gta-media-engine.yml"]
+  pull_request:
+    paths: ["gta-media-engine/**", ".github/workflows/gta-media-engine.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: gta-media-engine/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install FFmpeg (libass) and fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-dejavu-core
+      - run: pip install -r requirements.txt pytest ruff
+      - run: ruff check engine
+      - run: pytest -q
+
+  dashboard:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: gta-media-engine/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: gta-media-engine/dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

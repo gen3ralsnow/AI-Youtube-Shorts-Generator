@@ -1,0 +1,12 @@
+.env
+backend/data/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/*.egg-info/
+dashboard/node_modules/
+dashboard/.next/
+dashboard/next-env.d.ts
+dashboard/*.tsbuildinfo
+footage/
+backups/

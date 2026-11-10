@@ -1,0 +1,96 @@
+# Local / single-host stack. Production overrides: docker-compose.prod.yml (HTTPS via Caddy).
+#   cp .env.example .env   # fill in secrets
+#   docker compose up -d --build
+# Dashboard: http://localhost:3000   API docs: http://localhost:8000/api/docs
+
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-engine}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-engine}
+    REDIS_URL: redis://redis:6379/0
+    ENGINE_DATA_DIR: /data
+    STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+    S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+  volumes:
+    - engine-data:/data
+    - ${FOOTAGE_HOST_DIR:-./footage}:/footage:ro
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-engine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-engine}
+    volumes: [pg-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-engine}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-engine}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
+    volumes: [minio-data:/data]
+    restart: unless-stopped
+    profiles: ["minio"]   # enable with: docker compose --profile minio up -d
+
+  api:
+    <<: *backend
+    ports: ["127.0.0.1:8000:8000"]
+
+  worker-ai:          # research, scripts, voice, metadata
+    <<: *backend
+    command: celery -A engine.workers.celery_app worker -Q research,ai -c 2 -n ai@%h --loglevel=INFO
+    healthcheck: { disable: true }
+
+  worker-video:       # FFmpeg rendering and QC (CPU heavy, keep concurrency low)
+    <<: *backend
+    command: celery -A engine.workers.celery_app worker -Q video -c 1 -n video@%h --loglevel=INFO
+    healthcheck: { disable: true }
+
+  worker-publish:     # platform uploads and analytics
+    <<: *backend
+    command: celery -A engine.workers.celery_app worker -Q publishing,analytics -c 1 -n publish@%h --loglevel=INFO
+    healthcheck: { disable: true }
+
+  beat:
+    <<: *backend
+    command: celery -A engine.workers.celery_app beat --loglevel=INFO --schedule /data/celerybeat-schedule
+    healthcheck: { disable: true }
+
+  dashboard:
+    build: ./dashboard
+    environment:
+      ENGINE_API_URL: http://api:8000
+      ENGINE_ADMIN_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      DASHBOARD_USER: ${DASHBOARD_USER:?set DASHBOARD_USER}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD}
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  redis-data:
+  minio-data:
+  engine-data:

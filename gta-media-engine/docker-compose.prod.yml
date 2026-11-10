@@ -1,0 +1,44 @@
+# Production overlay: TLS termination with Caddy (automatic Let's Encrypt certificates),
+# nothing but 80/443 exposed publicly, daily database backups.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  api:
+    ports: !reset []
+    environment:
+      ENGINE_ENV: production
+      PUBLIC_BASE_URL: https://${API_DOMAIN:?set API_DOMAIN}
+      DASHBOARD_ORIGIN: https://${DASHBOARD_DOMAIN:?set DASHBOARD_DOMAIN}
+
+  dashboard:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [api, dashboard]
+    restart: unless-stopped
+
+  backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-engine}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-engine}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    entrypoint: ["sh", "-c", "while true; do sh /backup.sh; sleep 86400; done"]
+    depends_on: [postgres]
+    restart: unless-stopped
+
+volumes:
+  caddy-data:

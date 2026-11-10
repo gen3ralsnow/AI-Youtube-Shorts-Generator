@@ -1,0 +1,27 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Admin dashboard (HTTP basic auth enforced by the app as well)
+{$DASHBOARD_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy dashboard:3000
+}
+
+# Engine API: only OAuth callbacks and health need to be public. Everything else is reached
+# through the dashboard's server-side proxy, so it is blocked here.
+{$API_DOMAIN} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	@public path /health /api/platforms/*/callback
+	handle @public {
+		reverse_proxy api:8000
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
